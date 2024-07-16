@@ -599,16 +599,15 @@ def create_connection_switches(net, item, number_switches, et, buses, elements):
 
 def get_coords_from_buses(net, from_bus, to_bus, **kwargs):
     coords = []
+    has_coords = True
     if from_bus in net.bus_geodata.index:
         x1, y1 = net.bus_geodata.loc[from_bus, ['x', 'y']]
-        has_coords = True
     else:
         x1, y1 = np.nan, np.nan
         has_coords = False
 
     if to_bus in net.bus_geodata.index:
         x2, y2 = net.bus_geodata.loc[to_bus, ['x', 'y']]
-        has_coords = True
     else:
         x2, y2 = np.nan, np.nan
         has_coords = False
@@ -1872,6 +1871,8 @@ def create_sgen_genstat(net, item, pv_as_slack, pf_variable_p_gen, dict_net, is_
             else:
                 sg = pp.create_sgen(net, **params)
                 element = 'sgen'
+    if sg is None:
+        return
     logger.debug('created sgen at index <%d>' % sg)
 
     net[element].at[sg, 'description'] = ' \n '.join(item.desc) if len(item.desc) > 0 else ''
