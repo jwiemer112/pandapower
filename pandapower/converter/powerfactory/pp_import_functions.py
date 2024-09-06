@@ -1321,7 +1321,12 @@ def ask_load_params(item, pf_variable_p_loads, dict_net, variables):
             raise err
         logger.debug('load parameters: %s' % params)
 
+    # global scaling from pf
     global_scaling = dict_net['global_parameters']['global_load_scaling']
+
+    # element scaling from pf
+    params.pf_load_scaling = item.scale0
+
     params.scaling = global_scaling * item.scale0 \
                             if pf_variable_p_loads == 'plini' else 1
     if item.HasAttribute('zonefact'):
@@ -1358,7 +1363,12 @@ def ask_unbalanced_load_params(item, pf_variable_p_loads, dict_net, variables):
             raise err
         logger.debug('load parameters: %s' % params)
 
+    # globale scaling from pf
     global_scaling = dict_net['global_parameters']['global_load_scaling']
+
+    # element scaling from pf
+    params.pf_load_scaling = item.scale0
+
     params.scaling = global_scaling * item.scale0 \
                             if pf_variable_p_loads == 'plini' else 1
     if item.HasAttribute('zonefact'):
@@ -1766,6 +1776,7 @@ def ask_gen_params(item, pf_variable_p_gen, *vars):
         params.sn_mva = ga(item, map_power_var(pf_variable_p_gen, 'sn')) * multiplier
 
     params.scaling = item.scale0 if pf_variable_p_gen == 'pgini' else 1
+    params.pf_sgen_scaling = item.scale0
     # p_mw = p_mw, q_mvar = q_mvar, scaling = scaling
 
     return params
@@ -1879,6 +1890,10 @@ def create_sgen_genstat(net, item, pv_as_slack, pf_variable_p_gen, dict_net, is_
     add_additional_attributes(item, net, element, sg, attr_dict={"for_name": "equipment"},
                               attr_list=["sernum", "chr_name", "cpSite.loc_name"])
     net[element].at[sg, 'scaling'] = dict_net['global_parameters']['global_generation_scaling'] * item.scale0
+
+    # element scaling from pf
+    net[element].at[sg, 'pf_sgen_scaling'] = item.scale0
+
     get_pf_sgen_results(net, item, sg, is_unbalanced, element=element)
 
     logger.debug('created genstat <%s> as element <%s> at index <%d>' % (params.name, element, sg))
@@ -2115,7 +2130,8 @@ def create_sgen_asm(net, item, pf_variable_p_gen, dict_net):
         'p_mw': item.pgini * multiplier,
         'q_mvar': item.qgini * multiplier if item.bustp == 'PQ' else q_res,
         'in_service': in_service,
-        'scaling': global_scaling
+        'scaling': global_scaling,
+        'pf_sgen_scaling': item.scale0
     }
 
     logger.debug('params: %s' % params)
