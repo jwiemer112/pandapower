@@ -157,7 +157,7 @@ def coords_from_node_geodata(element_indices, from_nodes, to_nodes, node_geodata
     coords = [[(x_from, y_from), (x_to, y_to)] for x_from, y_from, x_to, y_to
               in np.concatenate([node_geodata.loc[fb_with_geo, ["x", "y"]].values,
                                  node_geodata.loc[tb_with_geo, ["x", "y"]].values], axis=1)
-              if not ignore_zero_length or not (x_from == x_to and y_from == y_to)]
+              if (x_from, y_from) != (x_to, y_to) or not ignore_zero_length]
     elements_without_geo = set(element_indices) - set(elements_with_geo)
     if len(elements_without_geo) > 0:
         logger.warning("No coords found for %s %s. %s geodata is missing for those %s!"
@@ -165,7 +165,7 @@ def coords_from_node_geodata(element_indices, from_nodes, to_nodes, node_geodata
     return coords, elements_with_geo
 
 
-def set_line_geodata_from_bus_geodata(net, line_index=None, overwrite=False):
+def set_line_geodata_from_bus_geodata(net, line_index=None, overwrite=False, ignore_zero_length=True):
     """
     Sets coordinates in net.line_geodata based on the from_bus and to_bus x,y coordinates
     in net.bus_geodata
@@ -182,7 +182,8 @@ def set_line_geodata_from_bus_geodata(net, line_index=None, overwrite=False):
                                                              from_nodes=net.line.loc[line_index, 'from_bus'].values,
                                                              to_nodes=net.line.loc[line_index, 'to_bus'].values,
                                                              node_geodata=net.bus_geodata,
-                                                             table_name="line_geodata", node_name="bus_geodata")
+                                                             table_name="line_geodata", node_name="bus_geodata",
+                                                             ignore_zero_length=ignore_zero_length)
 
     net.line_geodata = net.line_geodata.reindex(net.line.index)
     net.line_geodata.loc[line_index_successful, 'coords'] = coords

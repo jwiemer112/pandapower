@@ -911,6 +911,7 @@ def create_line_no_sections(net, main_item, item_list, bus1, bus2, coords, is_un
 
     df = [item.fline for item in item_list]
     parallel = [1 for item in item_list]
+    in_service = not bool(main_item.outserv)
     max_i_ka = min([item.Inom * p * d if item.Inom != 0 else 1e-3 for item, p, d in zip(item_list, parallel, df)])
     r_ohm_per_km = sum([item.R1 for item in item_list]) / total_len
     x_ohm_per_km = sum([item.X1 for item in item_list]) / total_len
@@ -948,7 +949,7 @@ def create_line_no_sections(net, main_item, item_list, bus1, bus2, coords, is_un
                                          temperature_degree_celsius=temperature_degree_celsius,
                                          r0_ohm_per_km=r0_ohm_per_km, x0_ohm_per_km=x0_ohm_per_km,
                                          c0_nf_per_km=c0_nf_per_km, g0_us_per_km=g0_us_per_km,
-                                         endtemp_degree=endtemp_degree)
+                                         endtemp_degree=endtemp_degree, in_service=in_service)
 
     net.line.loc[lid, 'description'] = ' \n '.join(main_item.desc) if len(main_item.desc) > 0 else ''
     if hasattr(main_item, "cimRdfId"):
