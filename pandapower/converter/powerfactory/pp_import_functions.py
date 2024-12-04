@@ -5,6 +5,7 @@ import re
 from itertools import combinations
 
 import numpy as np
+
 import pandapower as pp
 from pandapower.auxiliary import ADict
 from pandas import DataFrame, Series
@@ -25,7 +26,7 @@ def ga(element, attr):
 # import network to pandapower:
 def from_pf(dict_net, pv_as_slack=True, pf_variable_p_loads='plini', pf_variable_p_gen='pgini',
             flag_graphics='GPS', tap_opt="nntap", export_controller=True, handle_us="Deactivate",
-            max_iter=None, is_unbalanced=False, create_sections=True):
+            max_iter=None, is_unbalanced=False, create_sections=True, transform_coords=None):
     logger.debug("__name__: %s" % __name__)
     logger.debug('started from_pf')
     logger.info(logger.__dict__)
@@ -57,7 +58,7 @@ def from_pf(dict_net, pv_as_slack=True, pf_variable_p_loads='plini', pf_variable
     # ist leider notwendig
     n = 0
     for n, bus in enumerate(dict_net['ElmTerm'], 1):
-        create_bus(net=net, item=bus, flag_graphics=flag_graphics, is_unbalanced=is_unbalanced)
+        create_bus(net=net, item=bus, flag_graphics=flag_graphics, is_unbalanced=is_unbalanced, transform_coords=transform_coords)
     if n > 0: logger.info('imported %d buses' % n)
 
     logger.debug('creating external grids')
@@ -213,7 +214,7 @@ def from_pf(dict_net, pv_as_slack=True, pf_variable_p_loads='plini', pf_variable
     n = 0
     for n, line in enumerate(dict_net['ElmLne'], 0):
         create_line(net=net, item=line, flag_graphics=flag_graphics, create_sections=create_sections,
-                    is_unbalanced=is_unbalanced)
+                    is_unbalanced=is_unbalanced, transform_coords=transform_coords)
     logger.info('imported %d lines' % (len(net.line.line_idx.unique())) if len(net.line) else 0)
     net.line['section_idx'] = 0
     if dict_net['global_parameters']["iopt_tem"] == 1:
@@ -325,11 +326,13 @@ def add_additional_attributes(item, net, element, element_id, attr_list=None, at
                     net[element].loc[element_id, attr_dict[attr]] = chr_name[0]
 
 
-def create_bus(net, item, flag_graphics, is_unbalanced):
+def create_bus(net, item, flag_graphics, is_unbalanced, transform_coords):
     # add geo data
     if flag_graphics == 'GPS':
-        x = ga(item, 'e:GPSlon')
-        y = ga(item, 'e:GPSlat')
+        if transform_coords is None:
+            x, y = ga(item, 'e:GPSlon'), ga(item, 'e:GPSlat') # old default behaviour
+        else:
+            x, y = transform_coords(ga(item, 'e:GPSlat'), ga(item, 'e:GPSlon'))
     elif flag_graphics == 'graphic objects':
         graphic_object = get_graphic_object(item)
         if graphic_object:
@@ -397,22 +400,7 @@ def create_bus(net, item, flag_graphics, is_unbalanced):
     add_additional_attributes(item, net, "bus", bid, attr_dict={"for_name": "equipment", "cimRdfId": "origin_id"},
                               attr_list=["sernum", "chr_name", "cpSite.loc_name"])
 
-    # add geo data
-    if flag_graphics == 'GPS':
-        x = ga(item, 'e:GPSlon')
-        y = ga(item, 'e:GPSlat')
-    elif flag_graphics == 'graphic objects':
-        graphic_object = get_graphic_object(item)
-        if graphic_object:
-            x = ga(graphic_object, 'rCenterX')
-            y = ga(graphic_object, 'rCenterY')
-            # add gr coord data
-        else:
-            x, y = 0, 0
-    else:
-        x, y = 0, 0
-
-    # only values > 0+-1e-3 are entered into the bus_geodata
+    # only values > 0+-1e-3 are entered into the bus_geodata # TODO: remove redundat code?
     if x > 1e-3 or y > 1e-3:
         net.bus_geodata.loc[bid, 'x'] = x
         net.bus_geodata.loc[bid, 'y'] = y
@@ -620,15 +608,21 @@ def get_coords_from_buses(net, from_bus, to_bus, **kwargs):
     return coords
 
 
-def get_coords_from_item(item):
+def get_coords_from_item(item, transform_coords):
     # function reads geodata from item directly (for lines this is in item.GPScoords)
     coords = item.GPScoords
     try:
-        # lat / lon must be switched in my example (karlsruhe). Check if this is always right
-        c = tuple((x, y) for [y, x] in coords)
+        if transform_coords is None:
+            # lat / lon must be switched in my example (karlsruhe). Check if this is always right
+            c = tuple((x, y) for [y, x] in coords) # old default behaviour
+        else:
+            c = tuple(transform_coords(x, y) for [x, y] in coords)
     except ValueError:
         try:
-            c = tuple((x, y) for [y, x, z] in coords)
+            if transform_coords is None:
+                c = tuple((x, y) for [y, x, z] in coords) # old default behaviour
+            else:
+                c = tuple(transform_coords(x, y) for [x, y, z] in coords)
         except ValueError:
             c = []
     return c
@@ -663,7 +657,7 @@ def get_coords_from_grf_object(item):
     return coords
 
 
-def create_line(net, item, flag_graphics, create_sections, is_unbalanced):
+def create_line(net, item, flag_graphics, create_sections, is_unbalanced, transform_coords):
     params = {'parallel': item.nlnum, 'name': item.loc_name}
     logger.debug('>> creating line <%s>' % params['name'])
     logger.debug('line <%s> has <%d> parallel lines' % (params['name'], params['parallel']))
@@ -687,7 +681,7 @@ def create_line(net, item, flag_graphics, create_sections, is_unbalanced):
         coords = []
     elif flag_graphics == 'GPS':
         if len(item.GPScoords) > 0:
-            coords = get_coords_from_item(item)
+            coords = get_coords_from_item(item, transform_coords)
         else:
             coords = get_coords_from_buses(net, params['bus1'], params['bus2'])
     else:
@@ -887,17 +881,23 @@ def create_line_sections(net, item_list, line, bus1, bus2, coords, parallel, is_
         net.line.at[sid, "section"] = section_name
         net.res_line.at[sid, "pf_loading"] = line_loading
 
+
         if coords:
-            try:
-                scaling_factor = sum(sec_len) / calc_len_coords(coords)
+            if len(coords) == 1:
+                # fix coords if line has no end (assuming its modeling a coupling or something similar)
+                coords = (coords[0], coords[0])
+
+            calculated_lentgh = calc_len_coords(coords)
+            if calculated_lentgh > 0:
+                scaling_factor = sum(sec_len) / calculated_lentgh
                 sec_coords = get_section_coords(coords, sec_len=item.dline, start_len=item.rellen,
                                                 scale_factor=scaling_factor)
                 net.line_geodata.loc[sid, 'coords'] = sec_coords
-                # p1 = sec_coords[0]
-                # p2 = sec_coords[-1]
                 net.bus_geodata.loc[bus2, ['x', 'y']] = sec_coords[-1]
-            except ZeroDivisionError:
-                logger.warning("Could not generate geodata for line !!")
+            else:
+                net.line_geodata.loc[sid, 'coords'] = coords
+                net.bus_geodata.loc[bus2, ['x', 'y']] = sec_coords[-1]
+
 
     return sid_list
 
@@ -1883,8 +1883,10 @@ def create_sgen_genstat(net, item, pv_as_slack, pf_variable_p_gen, dict_net, is_
             else:
                 sg = pp.create_sgen(net, **params)
                 element = 'sgen'
+                
     if sg is None:
         return
+    
     logger.debug('created sgen at index <%d>' % sg)
 
     net[element].at[sg, 'description'] = ' \n '.join(item.desc) if len(item.desc) > 0 else ''

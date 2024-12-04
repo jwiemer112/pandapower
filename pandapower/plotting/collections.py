@@ -15,8 +15,9 @@ try:
     from matplotlib.collections import LineCollection, PatchCollection, Collection
     from matplotlib.font_manager import FontProperties
     from matplotlib.patches import Circle, Rectangle, PathPatch
-    from matplotlib.textpath import TextPath
+    from matplotlib.textpath import TextPath, text_to_path
     from matplotlib.transforms import Affine2D
+    from matplotlib.path import Path
     MATPLOTLIB_INSTALLED = True
 except ImportError:
     MATPLOTLIB_INSTALLED = False
@@ -39,7 +40,93 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class CustomTextPath(TextPath):
+class CustomTextPath(Path):
+    """
+    Create a path from the text. This class provides functionality for deepcopy, which is not
+    implemented for TextPath.
+    """
+
+    def __init__(self, xy, s, size=None, prop=None):
+        """
+        Create a path from the text. No support for TeX yet. Note that
+        it simply is a path, not an artist. You need to use the
+        PathPatch (or other artists) to draw this path onto the
+        canvas.
+
+        xy : position of the text.
+        s : text
+        size : font size
+        prop : font property
+        """
+        if not MATPLOTLIB_INSTALLED:
+            soft_dependency_error("class CustomTextPath", "matplotlib")
+        else:
+            from matplotlib.text import Text
+
+            prop = FontProperties._from_any(prop)
+            if size is None:
+                size = prop.get_size_in_points()
+
+            self._xy = xy
+            self.set_size(size)
+
+            self._cached_vertices = None
+            # s, ismath = Text(usetex=usetex)._preprocess_math(s)
+            super().__init__(*text_to_path.get_text_path(prop, s, ismath=True), readonly=True)
+            self._should_simplify = False
+
+        self.s = s
+        self.usetex = False
+        self.prop = prop
+
+    def set_size(self, size):
+        """Set the text size."""
+        self._size = size
+        self._invalid = True
+
+    def get_size(self):
+        """Get the text size."""
+        return self._size
+
+    @property
+    def vertices(self):
+        """
+        Return the cached path after updating it if necessary.
+        """
+        self._revalidate_path()
+        return self._cached_vertices
+
+    @property
+    def codes(self):
+        """
+        Return the codes
+        """
+        return self._codes
+
+    def _revalidate_path(self):
+        """
+        Update the path if necessary.
+
+        The path for the text is initially create with the font size of
+        `.FONT_SCALE`, and this path is rescaled to other size when necessary.
+        """
+        if self._invalid or self._cached_vertices is None:
+            tr = (Affine2D()
+                  .scale(self._size / text_to_path.FONT_SCALE)
+                  .translate(*self._xy))
+            self._cached_vertices = tr.transform(self._vertices)
+            self._cached_vertices.flags.writeable = False
+            self._invalid = False
+
+    def __deepcopy__(self, memo=None):
+        """
+        Returns a deepcopy of the `CustomTextPath`, which is not implemented for TextPath
+        """
+        return self.__class__(copy.deepcopy(self._xy), copy.deepcopy(self.s), size=self.get_size(),
+                              prop=copy.deepcopy(self.prop),
+                              _interpolation_steps=self._interpolation_steps, usetex=self.usetex)
+
+class CustomTextPath2(Path):
     """
     Create a path from the text. This class provides functionality for deepcopy, which is not
     implemented for TextPath.
@@ -59,13 +146,66 @@ class CustomTextPath(TextPath):
         """
         if not MATPLOTLIB_INSTALLED:
             soft_dependency_error("class CustomTextPath", "matplotlib")
-        if prop is None:
-            prop = FontProperties()
-        TextPath.__init__(self, xy, s, size=size, prop=prop,
-                          _interpolation_steps=_interpolation_steps, usetex=usetex)
+        else:
+            from matplotlib.text import Text
+
+            prop = FontProperties._from_any(prop)
+            if size is None:
+                size = prop.get_size_in_points()
+
+            self._xy = xy
+            self.set_size(size)
+
+            self._cached_vertices = None
+            # s, ismath = Text(usetex=usetex)._preprocess_math(s)
+            super().__init__(
+                *text_to_path.get_text_path(prop, s, ismath=False),
+                _interpolation_steps=_interpolation_steps,
+                readonly=True)
+            self._should_simplify = False
+
         self.s = s
         self.usetex = usetex
         self.prop = prop
+
+    def set_size(self, size):
+        """Set the text size."""
+        self._size = size
+        self._invalid = True
+
+    def get_size(self):
+        """Get the text size."""
+        return self._size
+
+    @property
+    def vertices(self):
+        """
+        Return the cached path after updating it if necessary.
+        """
+        self._revalidate_path()
+        return self._cached_vertices
+
+    @property
+    def codes(self):
+        """
+        Return the codes
+        """
+        return self._codes
+
+    def _revalidate_path(self):
+        """
+        Update the path if necessary.
+
+        The path for the text is initially create with the font size of
+        `.FONT_SCALE`, and this path is rescaled to other size when necessary.
+        """
+        if self._invalid or self._cached_vertices is None:
+            tr = (Affine2D()
+                  .scale(self._size / text_to_path.FONT_SCALE)
+                  .translate(*self._xy))
+            self._cached_vertices = tr.transform(self._vertices)
+            self._cached_vertices.flags.writeable = False
+            self._invalid = False
 
     def __deepcopy__(self, memo=None):
         """
