@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def from_pfd(app, prj_name: str, path_dst=None, pv_as_slack=False, pf_variable_p_loads='plini',
              pf_variable_p_gen='pgini', flag_graphics='GPS', tap_opt='nntap',
-             export_controller=True, handle_us="Deactivate", is_unbalanced=False, create_sections=True):
+             export_controller=True, handle_us="Deactivate", is_unbalanced=False, create_sections=True, sc_name=None):
     """
 
     Args:
@@ -44,6 +44,15 @@ def from_pfd(app, prj_name: str, path_dst=None, pv_as_slack=False, pf_variable_p
         raise RuntimeError('Project %s could not be found or activated' % prj_name)
 
     prj = app.GetActiveProject()
+
+    # scenario | Study Cases | Betriebsfall
+    scenario_name_list = [sc.loc_name for sc in app.GetProjectFolder("scen").GetContents()]
+    logger.info(f"Available 'Study Cases': {scenario_name_list}")
+    
+    if sc_name is not None and sc_name in scenario_name_list:
+        sc = app.GetProjectFolder('scen').GetContents(sc_name)[0]
+        sc.Activate()
+    logger.info(f"Study Case {app.GetActiveScenario().loc_name} is currently active!")
 
     logger.info('gathering network elements')
     dict_net = create_network_dict(app, flag_graphics)
@@ -209,4 +218,3 @@ if __name__ == '__main__':
         set_PF_level(logger, app_handler, 'INFO')
     except:
         pass
-
